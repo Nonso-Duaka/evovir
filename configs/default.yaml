@@ -1,0 +1,45 @@
+# ── Model ────────────────────────────────────────────────────────────────────
+model_name: evo2_7b_base          # cheapest model; no FP8/Hopper required
+layer_name: blocks.28.mlp.l3      # intermediate layer recommended for downstream tasks
+embedding_dim: 4096
+
+# ── Sequence handling ─────────────────────────────────────────────────────────
+max_seq_len: 8000                  # context window for evo2_7b_base (8K tokens)
+window_stride: 4000                # 50 % overlap when windowing long sequences
+min_seq_len: 500                   # discard sequences shorter than this
+max_genome_len: 300000             # skip genomes longer than this (assembly artefacts)
+ambiguous_base_threshold: 0.05    # discard sequences with > 5 % N/ambiguous bases
+
+# ── Data ─────────────────────────────────────────────────────────────────────
+data_dir: data
+embeddings_dir: outputs/embeddings
+ncbi_email: your@email.com         # required by NCBI Entrez — set before downloading
+
+# Positive class: virus host taxa that are vertebrates
+vertebrate_host_taxids:
+  - 7742       # Vertebrata (covers all fish, amphibia, reptiles, birds, mammals)
+
+# Negative class: representative non-vertebrate host taxa
+non_vertebrate_host_taxids:
+  - 50557      # Insecta
+  - 33090      # Viridiplantae (plants)
+  - 4751       # Fungi
+  - 2          # Bacteria  (bacteriophages)
+  - 6656       # Arthropoda (broader than Insecta)
+
+# Max sequences per class to download (set null for no limit)
+max_per_class: 5000
+
+# ── Training ──────────────────────────────────────────────────────────────────
+head_type: mlp                     # "linear" or "mlp"
+hidden_dim: 512                    # MLP hidden layer size (ignored for linear)
+dropout: 0.3
+batch_size: 256
+learning_rate: 1.0e-4
+weight_decay: 1.0e-4
+epochs: 50
+patience: 10                       # early stopping patience (epochs)
+val_fraction: 0.15
+test_fraction: 0.15
+seed: 42
+output_dir: outputs

@@ -1,0 +1,10 @@
+data/fasta/
+data/*.csv
+outputs/
+__pycache__/
+*.pyc
+*.egg-info/
+.env
+*.h5
+*.pt
+.ipynb_checkpoints/
