@@ -1,13 +1,10 @@
 """
-Evaluate a trained ViralClassifier on new sequences or a held-out HDF5 split.
+Evaluate a trained ViralClassifier.
 
 Usage
 -----
-    # Evaluate on saved test split (from training run)
     python scripts/evaluate.py --config configs/default.yaml
-
-    # Predict on a custom FASTA file (requires GPU for embedding extraction)
-    python scripts/evaluate.py --config configs/default.yaml --fasta my_viruses.fa --labels 1
+    python scripts/evaluate.py --config configs/default.yaml --fasta my_viruses.fa
 """
 
 import argparse
@@ -34,8 +31,11 @@ from evovir.model import ViralClassifier
 
 
 def load_model(cfg: dict, device: torch.device) -> ViralClassifier:
+    task = cfg.get("task", "binary")
+    num_classes = cfg.get("num_classes", 2)
     model = ViralClassifier(
         embedding_dim=cfg["embedding_dim"],
+        num_classes=num_classes,
         head_type=cfg["head_type"],
         hidden_dim=cfg["hidden_dim"],
         dropout=cfg["dropout"],
@@ -48,6 +48,9 @@ def load_model(cfg: dict, device: torch.device) -> ViralClassifier:
 
 
 def evaluate_hdf5(cfg: dict, device: torch.device) -> None:
+    task = cfg.get("task", "binary")
+    is_binary = (task == "binary")
+
     emb_path = Path(cfg["embeddings_dir"]) / "embeddings.h5"
     dataset = EmbeddingDataset(emb_path)
     model = load_model(cfg, device)
@@ -58,29 +61,48 @@ def evaluate_hdf5(cfg: dict, device: torch.device) -> None:
     with torch.no_grad():
         probs = model.predict_proba(embeddings).cpu().numpy()
 
-    preds = (probs >= 0.5).astype(int)
-    auroc = roc_auc_score(labels, probs)
-    auprc = average_precision_score(labels, probs)
-
-    print("\n── Classification Report ──────────────────────────────")
-    print(classification_report(labels, preds, target_names=["non-vertebrate", "vertebrate"]))
-    print(f"AUROC : {auroc:.4f}")
-    print(f"AUPRC : {auprc:.4f}")
-
     out_dir = Path(cfg["output_dir"])
-    _plot_roc(labels, probs, auroc, out_dir / "roc_curve.png")
-    _plot_pr(labels, probs, auprc, out_dir / "pr_curve.png")
-    _plot_confusion(labels, preds, out_dir / "confusion_matrix.png")
 
-    results = {"auroc": auroc, "auprc": auprc, "n_samples": int(len(labels))}
+    if is_binary:
+        preds = (probs >= 0.5).astype(int)
+        auroc = roc_auc_score(labels, probs)
+        auprc = average_precision_score(labels, probs)
+
+        print("\n-- Classification Report --")
+        print(classification_report(labels, preds, target_names=["other", "vertebrate_viral"]))
+        print(f"AUROC : {auroc:.4f}")
+        print(f"AUPRC : {auprc:.4f}")
+
+        _plot_roc(labels, probs, auroc, out_dir / "roc_curve.png")
+        _plot_pr(labels, probs, auprc, out_dir / "pr_curve.png")
+        _plot_confusion(labels, preds, ["other", "vertebrate_viral"], out_dir / "confusion_matrix.png")
+
+        results = {"auroc": auroc, "auprc": auprc, "n_samples": int(len(labels))}
+    else:
+        preds = probs.argmax(axis=1)
+        auroc = roc_auc_score(labels, probs, multi_class="ovr", average="macro")
+        n_classes = probs.shape[1]
+        class_names = [f"class_{i}" for i in range(n_classes)]
+
+        print("\n-- Classification Report --")
+        print(classification_report(labels, preds, target_names=class_names))
+        print(f"Macro AUROC : {auroc:.4f}")
+
+        _plot_confusion(labels, preds, class_names, out_dir / "confusion_matrix.png")
+
+        results = {"macro_auroc": auroc, "accuracy": float((preds == labels).mean()), "n_samples": int(len(labels))}
+
     with open(out_dir / "eval_results.json", "w") as f:
         json.dump(results, f, indent=2)
-    print(f"\nPlots and results saved to {out_dir}/")
+    print(f"\nResults saved to {out_dir}/")
 
 
-def predict_fasta(cfg: dict, fasta_path: str, label: int, device: torch.device) -> None:
+def predict_fasta(cfg: dict, fasta_path: str, device: torch.device) -> None:
     from Bio import SeqIO
     from evovir.embeddings import EmbeddingExtractor
+
+    task = cfg.get("task", "binary")
+    is_binary = (task == "binary")
 
     records = list(SeqIO.parse(fasta_path, "fasta"))
     sequences = [str(r.seq).upper().replace("U", "T") for r in records]
@@ -100,17 +122,22 @@ def predict_fasta(cfg: dict, fasta_path: str, label: int, device: torch.device) 
     with torch.no_grad():
         probs = model.predict_proba(embeddings).cpu().numpy()
 
-    df = pd.DataFrame({"accession": accessions, "prob_vertebrate": probs})
-    df["prediction"] = (df["prob_vertebrate"] >= 0.5).astype(int)
-    df["predicted_label"] = df["prediction"].map({1: "vertebrate", 0: "non_vertebrate"})
-    print(df.to_string(index=False))
+    if is_binary:
+        df = pd.DataFrame({"accession": accessions, "prob_vertebrate": probs})
+        df["prediction"] = (df["prob_vertebrate"] >= 0.5).astype(int)
+    else:
+        df = pd.DataFrame({"accession": accessions})
+        for c in range(probs.shape[1]):
+            df[f"prob_class_{c}"] = probs[:, c]
+        df["prediction"] = probs.argmax(axis=1)
 
+    print(df.to_string(index=False))
     out_csv = Path(cfg["output_dir"]) / "predictions.csv"
     df.to_csv(out_csv, index=False)
-    print(f"\nPredictions saved → {out_csv}")
+    print(f"\nPredictions saved -> {out_csv}")
 
 
-# ── Plotting helpers ──────────────────────────────────────────────────────────
+# -- Plotting --
 
 def _plot_roc(labels, probs, auroc, path):
     fpr, tpr, _ = roc_curve(labels, probs)
@@ -119,7 +146,7 @@ def _plot_roc(labels, probs, auroc, path):
     plt.plot([0, 1], [0, 1], "k--")
     plt.xlabel("False Positive Rate")
     plt.ylabel("True Positive Rate")
-    plt.title("ROC Curve – Vertebrate Host Range")
+    plt.title("ROC Curve")
     plt.legend()
     plt.tight_layout()
     plt.savefig(path, dpi=150)
@@ -139,9 +166,9 @@ def _plot_pr(labels, probs, auprc, path):
     plt.close()
 
 
-def _plot_confusion(labels, preds, path):
+def _plot_confusion(labels, preds, class_names, path):
     cm = confusion_matrix(labels, preds)
-    disp = ConfusionMatrixDisplay(cm, display_labels=["non-vertebrate", "vertebrate"])
+    disp = ConfusionMatrixDisplay(cm, display_labels=class_names)
     fig, ax = plt.subplots()
     disp.plot(ax=ax, colorbar=False)
     plt.tight_layout()
@@ -149,13 +176,10 @@ def _plot_confusion(labels, preds, path):
     plt.close()
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/default.yaml")
-    parser.add_argument("--fasta", default=None, help="FASTA file of new sequences to predict.")
-    parser.add_argument("--label", type=int, default=None, help="True label for FASTA sequences (0 or 1).")
+    parser.add_argument("--fasta", default=None)
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -164,6 +188,6 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if args.fasta:
-        predict_fasta(cfg, args.fasta, args.label, device)
+        predict_fasta(cfg, args.fasta, device)
     else:
         evaluate_hdf5(cfg, device)

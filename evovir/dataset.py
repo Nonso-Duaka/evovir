@@ -1,13 +1,18 @@
 """
 Dataset classes for EvoVir.
 
-ViralDataset  – loads raw sequences from FASTA + labels CSV.
+ViralDataset    – loads raw sequences from FASTA + metadata CSV.
 EmbeddingDataset – loads pre-extracted embeddings (HDF5) for classifier training.
+
+Supports binary and multiclass. Labels are provided manually in metadata.csv.
+  binary:     label column is 0 or 1
+  multiclass: label column is 0, 1, 2, ...
 """
 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -19,9 +24,6 @@ from Bio import SeqIO
 from torch.utils.data import Dataset
 
 
-# Characters that are unambiguous DNA bases
-_VALID_BASES = re.compile(r"^[ACGTacgt]+$")
-
 AMBIGUOUS_RE = re.compile(r"[^ACGTacgt]")
 
 
@@ -31,38 +33,29 @@ def _ambiguous_fraction(seq: str) -> float:
 
 class ViralDataset(Dataset):
     """
-    Loads viral genome sequences from disk.
+    Loads sequences from FASTA files referenced in metadata.csv.
 
-    Expected layout::
-
-        data/
-          metadata.csv        # columns: accession, label (0/1), fasta_file (optional)
-          fasta/
-            vertebrate/       # one .fa per sequence, or one multi-FASTA
-            non_vertebrate/
-
-    If metadata.csv has a ``sequence`` column the sequences are read inline;
-    otherwise they are read from fasta files.
+    Expected CSV columns: accession, label, fasta_file
 
     Args:
         metadata_path: Path to metadata CSV.
-        fasta_dir: Root directory containing fasta sub-dirs (if sequences not inline).
-        min_len: Discard sequences shorter than this.
-        max_len: Discard sequences longer than this.
-        ambiguous_threshold: Discard sequences whose fraction of non-ACGT bases
-            exceeds this value.
+        fasta_dir: Root directory containing FASTA files.
+        task: "binary" or "multiclass".
+        min_len / max_len / ambiguous_threshold: QC filters.
     """
 
     def __init__(
         self,
         metadata_path: str | Path,
         fasta_dir: Optional[str | Path] = None,
+        task: str = "binary",
         min_len: int = 500,
         max_len: int = 300_000,
         ambiguous_threshold: float = 0.05,
     ) -> None:
         self.meta = pd.read_csv(metadata_path)
         self.fasta_dir = Path(fasta_dir) if fasta_dir else None
+        self.task = task
         self.min_len = min_len
         self.max_len = max_len
         self.ambiguous_threshold = ambiguous_threshold
@@ -73,7 +66,6 @@ class ViralDataset(Dataset):
 
         self._load()
 
-    # ------------------------------------------------------------------
     def _load(self) -> None:
         skipped = 0
         for _, row in self.meta.iterrows():
@@ -81,7 +73,7 @@ class ViralDataset(Dataset):
             if seq is None:
                 skipped += 1
                 continue
-            seq = seq.upper().replace("U", "T")  # RNA → DNA
+            seq = seq.upper().replace("U", "T")
             if not self._passes_filters(seq):
                 skipped += 1
                 continue
@@ -91,11 +83,9 @@ class ViralDataset(Dataset):
 
         if skipped:
             print(f"[ViralDataset] Skipped {skipped} sequences (failed QC filters).")
-        print(
-            f"[ViralDataset] Loaded {len(self.sequences)} sequences "
-            f"({sum(self.labels)} vertebrate, "
-            f"{len(self.labels) - sum(self.labels)} non-vertebrate)."
-        )
+        counts = Counter(self.labels)
+        parts = ", ".join(f"label {k}: {v}" for k, v in sorted(counts.items()))
+        print(f"[ViralDataset] {len(self.labels)} sequences ({parts})")
 
     def _get_sequence(self, row: pd.Series) -> Optional[str]:
         if "sequence" in row and pd.notna(row["sequence"]):
@@ -108,7 +98,6 @@ class ViralDataset(Dataset):
         records = list(SeqIO.parse(fasta_path, "fasta"))
         if not records:
             return None
-        # If multi-record (segmented genome) concatenate
         return "".join(str(r.seq) for r in records)
 
     def _passes_filters(self, seq: str) -> bool:
@@ -120,30 +109,32 @@ class ViralDataset(Dataset):
             return False
         return True
 
-    # ------------------------------------------------------------------
     def __len__(self) -> int:
         return len(self.sequences)
 
     def __getitem__(self, idx: int) -> Tuple[str, int]:
         return self.sequences[idx], self.labels[idx]
 
-    # ------------------------------------------------------------------
+    @property
+    def num_classes(self) -> int:
+        return len(set(self.labels))
+
     @property
     def class_weights(self) -> torch.Tensor:
-        """Inverse-frequency weights for BCEWithLogitsLoss pos_weight."""
-        n_pos = sum(self.labels)
-        n_neg = len(self.labels) - n_pos
-        return torch.tensor([n_neg / max(n_pos, 1)], dtype=torch.float32)
+        """Inverse-frequency weights. Shape (num_classes,)."""
+        counts = Counter(self.labels)
+        n = len(self.labels)
+        weights = [n / (len(counts) * counts[c]) for c in sorted(counts.keys())]
+        return torch.tensor(weights, dtype=torch.float32)
 
 
 class EmbeddingDataset(Dataset):
     """
     Loads pre-extracted embeddings from an HDF5 file.
 
-    HDF5 layout (written by ``EmbeddingExtractor.save_to_hdf5``)::
-
+    HDF5 layout::
         /embeddings   – float32, shape (N, D)
-        /labels       – int8,    shape (N,)
+        /labels       – int64,   shape (N,)
         /accessions   – bytes,   shape (N,)
     """
 
@@ -151,15 +142,12 @@ class EmbeddingDataset(Dataset):
         self.path = Path(hdf5_path)
         with h5py.File(self.path, "r") as f:
             self.embeddings = torch.from_numpy(f["embeddings"][:].astype(np.float32))
-            self.labels = torch.from_numpy(f["labels"][:].astype(np.float32))
+            self.labels = torch.from_numpy(f["labels"][:].astype(np.int64))
             self.accessions = [a.decode() for a in f["accessions"][:]]
 
-        n_pos = int(self.labels.sum().item())
-        n_neg = len(self.labels) - n_pos
-        print(
-            f"[EmbeddingDataset] {len(self.labels)} samples "
-            f"({n_pos} vertebrate, {n_neg} non-vertebrate) from {self.path.name}"
-        )
+        counts = Counter(self.labels.numpy().tolist())
+        parts = ", ".join(f"label {k}: {v}" for k, v in sorted(counts.items()))
+        print(f"[EmbeddingDataset] {len(self.labels)} samples ({parts})")
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -172,7 +160,12 @@ class EmbeddingDataset(Dataset):
         return self.embeddings.shape[1]
 
     @property
+    def num_classes(self) -> int:
+        return len(torch.unique(self.labels))
+
+    @property
     def class_weights(self) -> torch.Tensor:
-        n_pos = int(self.labels.sum().item())
-        n_neg = len(self.labels) - n_pos
-        return torch.tensor([n_neg / max(n_pos, 1)], dtype=torch.float32)
+        counts = Counter(self.labels.numpy().tolist())
+        n = len(self.labels)
+        weights = [n / (len(counts) * counts[c]) for c in sorted(counts.keys())]
+        return torch.tensor(weights, dtype=torch.float32)

@@ -1,29 +1,27 @@
 # EvoVir
 
-Binary classifier that predicts whether a virus infects **vertebrates** or **non-vertebrates**, built on top of [Evo 2](https://github.com/ArcInstitute/evo2) DNA language model embeddings.
+Viral host-range classifier built on [Evo 2](https://github.com/ArcInstitute/evo2) DNA language model embeddings. Supports binary and multiclass classification.
 
 ## How it works
 
 ```
 Viral genome (DNA/RNA)
-        │
-        ▼
-  Evo 2 backbone (frozen)          ← evo2_7b_base recommended
-        │  intermediate layer embeddings  [seq_len × 4096]
-        ▼
+        |
+        v
+  Evo 2 backbone (frozen)          <- evo2_7b_base
+        |  intermediate layer embeddings  [seq_len x 4096]
+        v
   Mean-pool over positions + windows  [4096]
-        │
-        ▼
+        |
+        v
   Classification head (MLP or Linear)
-        │
-        ▼
-  P(vertebrate-infecting)
+        |
+        v
+  Binary: P(vertebrate-infecting)
+  Multiclass: P(class_0), P(class_1), ...
 ```
 
-The backbone is **always frozen** — only the lightweight head is trained.
-This makes training fast and requires no GPU after embedding extraction.
-
----
+The backbone is always frozen. Only the lightweight head is trained.
 
 ## Installation
 
@@ -31,7 +29,7 @@ This makes training fast and requires no GPU after embedding extraction.
 # 1. Create conda env
 conda create -n evo2 && conda activate evo2
 
-# 2. Install Evo 2 dependencies (requires NVIDIA GPU + CUDA drivers)
+# 2. Install Evo 2 dependencies
 conda install -c nvidia cuda-nvcc cuda-cudart-dev
 conda install -c conda-forge transformer-engine-torch=2.3.0
 pip install flash-attn==2.8.0.post2 --no-build-isolation
@@ -41,104 +39,72 @@ pip install evo2
 pip install -e .
 ```
 
----
+## Quick start
 
-## Workflow
+### 1. Prepare data (manual)
 
-### Step 1 — Download data
+Create `data/metadata.csv` with columns: `accession`, `label`, `fasta_file`.
+Put FASTA files in `data/fasta/`.
 
-Set your email in `configs/default.yaml` (`ncbi_email` field), then:
+Binary labels: `0` / `1`. Multiclass labels: `0`, `1`, `2`, ...
 
-```bash
-# Dry run: just print how many sequences would be downloaded
-python scripts/download_data.py --config configs/default.yaml --dry-run
+ViraLM accession lists are included in `data/accessions/` for reference.
 
-# Full download (may take 30–60 min depending on max_per_class)
-python scripts/download_data.py --config configs/default.yaml
-```
-
-Produces:
-```
-data/
-  metadata.csv
-  fasta/
-    vertebrate/
-    non_vertebrate/
-```
-
-### Step 2 — Extract embeddings  *(requires GPU)*
+### 2. Train
 
 ```bash
-python scripts/extract_embeddings.py --config configs/default.yaml
+evovir-train --config configs/default.yaml
 ```
 
-Produces `outputs/embeddings/embeddings.h5`.
-Copy this file to wherever you plan to train — no GPU needed after this step.
+This automatically extracts Evo 2 embeddings (if not cached), trains the head, and evaluates on a held-out test set. Outputs: `outputs/best_model.pt`, `outputs/training_history.json`.
 
-### Step 3 — Train the classifier  *(CPU or GPU)*
+### 3. Predict on new sequences
 
 ```bash
-python scripts/train.py --config configs/default.yaml
+evovir-predict --fasta my_seqs.fa --config configs/default.yaml
 ```
 
-Produces `outputs/best_model.pt` and `outputs/training_history.json`.
+Extracts embeddings, runs the trained model, prints predictions, and saves `outputs/predictions.csv`.
 
-### Step 4 — Evaluate
+### Advanced: run steps individually
 
 ```bash
-# Evaluate on the full dataset (uses saved split indices)
-python scripts/evaluate.py --config configs/default.yaml
-
-# Predict on your own FASTA  (requires GPU for embedding extraction)
-python scripts/evaluate.py --config configs/default.yaml --fasta my_seqs.fa
+python scripts/extract_embeddings.py --config configs/default.yaml   # extract only
+python scripts/train.py --config configs/default.yaml                # train only (needs embeddings)
+python scripts/evaluate.py --config configs/default.yaml             # evaluate on dataset
 ```
-
-Produces ROC/PR curves and a predictions CSV in `outputs/`.
-
----
 
 ## Configuration
 
-All settings live in `configs/default.yaml`.  Key options:
+All settings live in `configs/default.yaml`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `model_name` | `evo2_7b_base` | Evo 2 checkpoint (8K context, no FP8/Hopper required) |
+| `task` | `binary` | `binary` or `multiclass` |
+| `num_classes` | `2` | Number of classes (ignored for binary) |
+| `model_name` | `evo2_7b_base` | Evo 2 checkpoint (8K context) |
 | `layer_name` | `blocks.28.mlp.l3` | Layer to hook for embeddings |
-| `max_seq_len` | `8000` | Context window; sequences are windowed if longer |
-| `max_per_class` | `5000` | Max sequences to download per class |
-| `head_type` | `mlp` | `"linear"` or `"mlp"` |
-| `ncbi_email` | *(set this)* | Required by NCBI Entrez |
-
----
+| `max_seq_len` | `8000` | Context window; longer sequences are windowed |
+| `precision` | `bf16` | `fp32`, `fp16`, or `bf16` |
+| `extraction_batch_size` | `8` | Windows per forward pass |
+| `head_type` | `mlp` | `linear` or `mlp` |
 
 ## Project structure
 
 ```
 evovir/
-├── configs/default.yaml        # all hyperparameters and data settings
+├── configs/default.yaml        # all hyperparameters and settings
+├── data/
+│   └── accessions/             # ViraLM accession lists
 ├── evovir/
-│   ├── dataset.py              # ViralDataset (raw FASTA) + EmbeddingDataset (HDF5)
-│   ├── embeddings.py           # Evo2 embedding extraction with windowing
+│   ├── dataset.py              # ViralDataset + EmbeddingDataset
+│   ├── embeddings.py           # Evo 2 embedding extraction
 │   ├── model.py                # LinearHead / MLPHead / ViralClassifier
-│   └── trainer.py              # Training loop, early stopping, metrics
+│   └── trainer.py              # Training loop with AMP, early stopping, metrics
 ├── scripts/
-│   ├── download_data.py        # NCBI Entrez download
-│   ├── extract_embeddings.py   # GPU: run Evo 2, save embeddings to HDF5
-│   ├── train.py                # Train classification head
-│   └── evaluate.py             # Evaluate + predict on new FASTA
-└── data/                       # Downloaded sequences (gitignored)
+│   ├── extract_embeddings.py   # Run Evo 2, save embeddings to HDF5
+│   ├── train.py                # Extract + train + evaluate (evovir-train)
+│   ├── predict.py              # Inference on new FASTA (evovir-predict)
+│   └── evaluate.py             # Detailed evaluation on dataset
+└── pyproject.toml
 ```
-
----
-
-## Hardware requirements
-
-| Step | Hardware |
-|------|----------|
-| Download data | CPU only |
-| Extract embeddings | NVIDIA GPU (any modern GPU for `evo2_7b_base`) |
-| Train head | CPU or GPU |
-| Inference | GPU recommended; CPU feasible for small batches |
-
-The recommended starting model (`evo2_7b_base`) does **not** require an H100 or FP8 support.

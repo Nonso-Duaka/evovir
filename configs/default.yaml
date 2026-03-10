@@ -1,44 +1,42 @@
+# ── Task ──────────────────────────────────────────────────────────────────────
+# binary     : label 0/1, BCEWithLogitsLoss, single logit output
+# multiclass : label 0..N-1, CrossEntropyLoss, N logit outputs
+task: binary
+num_classes: 2                     # ignored for binary; set to 3 for three-class etc.
+
+# ── Data ─────────────────────────────────────────────────────────────────────
+accessions_dir: data/accessions             # ViraLM accession lists (for reference)
+data_dir: data                              # metadata.csv + fasta/ go here
+embeddings_dir: outputs/embeddings
+
 # ── Model ────────────────────────────────────────────────────────────────────
-model_name: evo2_7b_base          # cheapest model; no FP8/Hopper required
-layer_name: blocks.28.mlp.l3      # intermediate layer recommended for downstream tasks
+model_name: evo2_7b_base
+layer_name: blocks.28.mlp.l3
 embedding_dim: 4096
 
 # ── Sequence handling ─────────────────────────────────────────────────────────
-max_seq_len: 8000                  # context window for evo2_7b_base (8K tokens)
-window_stride: 4000                # 50 % overlap when windowing long sequences
-min_seq_len: 500                   # discard sequences shorter than this
-max_genome_len: 300000             # skip genomes longer than this (assembly artefacts)
-ambiguous_base_threshold: 0.05    # discard sequences with > 5 % N/ambiguous bases
+max_seq_len: 8000
+window_stride: 4000
+min_seq_len: 500
+max_genome_len: 300000
+ambiguous_base_threshold: 0.05
 
-# ── Data ─────────────────────────────────────────────────────────────────────
-data_dir: data
-embeddings_dir: outputs/embeddings
-ncbi_email: your@email.com         # required by NCBI Entrez — set before downloading
-
-# Positive class: virus host taxa that are vertebrates
-vertebrate_host_taxids:
-  - 7742       # Vertebrata (covers all fish, amphibia, reptiles, birds, mammals)
-
-# Negative class: representative non-vertebrate host taxa
-non_vertebrate_host_taxids:
-  - 50557      # Insecta
-  - 33090      # Viridiplantae (plants)
-  - 4751       # Fungi
-  - 2          # Bacteria  (bacteriophages)
-  - 6656       # Arthropoda (broader than Insecta)
-
-# Max sequences per class to download (set null for no limit)
-max_per_class: 5000
+# ── GPU ───────────────────────────────────────────────────────────────────────
+precision: bf16
+extraction_batch_size: 8
+num_workers: 4
+compile_model: false
+multi_gpu: true
 
 # ── Training ──────────────────────────────────────────────────────────────────
-head_type: mlp                     # "linear" or "mlp"
-hidden_dim: 512                    # MLP hidden layer size (ignored for linear)
+head_type: mlp
+hidden_dim: 512
 dropout: 0.3
-batch_size: 256
+batch_size: 512
 learning_rate: 1.0e-4
 weight_decay: 1.0e-4
 epochs: 50
-patience: 10                       # early stopping patience (epochs)
+patience: 10
 val_fraction: 0.15
 test_fraction: 0.15
 seed: 42
