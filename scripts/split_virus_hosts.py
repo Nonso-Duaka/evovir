@@ -67,15 +67,24 @@ def fetch_host_info_batch(accessions: list[str], batch_size: int = 200) -> dict:
     for i in range(0, len(accessions), batch_size):
         batch = accessions[i:i + batch_size]
         ids = ",".join(batch)
-        try:
-            handle = Entrez.efetch(
-                db="nucleotide", id=ids, rettype="gb", retmode="xml"
-            )
-            records = Entrez.read(handle)
-            handle.close()
-        except Exception as e:
-            print(f"  Error fetching batch {i}-{i+len(batch)}: {e}")
-            time.sleep(5)
+        records = None
+        for attempt in range(1, 4):
+            try:
+                handle = Entrez.efetch(
+                    db="nucleotide", id=ids, rettype="gb", retmode="xml"
+                )
+                records = Entrez.read(handle)
+                handle.close()
+                break
+            except Exception as e:
+                if attempt < 3:
+                    wait = 10 * attempt
+                    print(f"  Retry {attempt}/3 for batch {i}-{i+len(batch)} "
+                          f"(error: {e}), waiting {wait}s...")
+                    time.sleep(wait)
+                else:
+                    print(f"  Failed after 3 retries for batch {i}-{i+len(batch)}: {e}")
+        if records is None:
             continue
 
         for rec in records:
