@@ -15,15 +15,15 @@ layer_name: blocks.28.mlp.l3
 embedding_dim: 4096
 
 # ── Sequence handling ─────────────────────────────────────────────────────────
-max_seq_len: 8000
-window_stride: 4000
+max_seq_len: 4000
+window_stride: 2000
 min_seq_len: 500
 max_genome_len: 300000
 ambiguous_base_threshold: 0.05
 
 # ── GPU ───────────────────────────────────────────────────────────────────────
 precision: bf16
-extraction_batch_size: 8
+extraction_batch_size: 4
 num_workers: 4
 compile_model: false
 multi_gpu: true

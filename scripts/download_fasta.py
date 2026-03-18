@@ -66,9 +66,13 @@ def main():
     if args.all:
         acc_dir = Path("data/accessions")
         jobs = [
-            (acc_dir / "virus_vertebrate.txt", Path("data/fasta")),
-            (acc_dir / "virus_non_vertebrate.txt", Path("data/fasta")),
-            (acc_dir / "bacteria.txt", Path("data/fasta")),
+            (acc_dir / "virus_vertebrate.txt", Path("data/fasta/virus_vertebrate")),
+            (acc_dir / "virus_non_vertebrate.txt", Path("data/fasta/virus_non_vertebrate")),
+            (acc_dir / "bacteria.txt", Path("data/fasta/bacteria")),
+            (acc_dir / "archaea.txt", Path("data/fasta/archaea")),
+            (acc_dir / "protozoa.txt", Path("data/fasta/protozoa")),
+            (acc_dir / "fungi.txt", Path("data/fasta/fungi")),
+            (acc_dir / "plasmid.txt", Path("data/fasta/plasmid")),
         ]
         for acc_file, out in jobs:
             if not acc_file.exists():

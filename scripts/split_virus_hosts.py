@@ -82,12 +82,28 @@ def fetch_host_info_batch(accessions: list[str], batch_size: int = 200) -> dict:
             acc = rec.get("GBSeq_primary-accession", "")
             version = rec.get("GBSeq_accession-version", acc)
             host = ""
+            lab_host = ""
+            isolation_source = ""
+            note = ""
             taxonomy = rec.get("GBSeq_taxonomy", "")
             for qual in rec.get("GBSeq_feature-table", [{}])[0].get("GBFeature_quals", []):
-                if qual.get("GBQualifier_name") == "host":
-                    host = qual.get("GBQualifier_value", "")
-                    break
-            results[version] = {"host": host, "taxonomy": taxonomy}
+                name = qual.get("GBQualifier_name", "")
+                value = qual.get("GBQualifier_value", "")
+                if name == "host":
+                    host = value
+                elif name == "lab_host":
+                    lab_host = value
+                elif name == "isolation_source":
+                    isolation_source = value
+                elif name == "note":
+                    note = value
+            results[version] = {
+                "host": host,
+                "lab_host": lab_host,
+                "isolation_source": isolation_source,
+                "note": note,
+                "taxonomy": taxonomy,
+            }
 
         print(f"  Fetched {min(i + batch_size, len(accessions))}/{len(accessions)}")
         time.sleep(0.4)
@@ -133,21 +149,29 @@ def main():
     unknown = []
     host_cache = {}
 
+    print("\nClassifying accessions by host...")
     for acc in accessions:
         info = host_info.get(acc, {})
         host = info.get("host", "")
+        lab_host = info.get("lab_host", "")
+        isolation_source = info.get("isolation_source", "")
+        note = info.get("note", "")
         taxonomy = info.get("taxonomy", "")
 
-        if host:
-            if host not in host_cache:
-                tax_id = get_host_taxid(host)
+        # Try host field first, then fall back to lab_host, isolation_source, note
+        host_name = host or lab_host
+        classified = False
+
+        if host_name:
+            if host_name not in host_cache:
+                tax_id = get_host_taxid(host_name)
                 if tax_id:
                     lineage = get_host_lineage(tax_id)
-                    host_cache[host] = is_vertebrate_host(lineage or "")
+                    host_cache[host_name] = is_vertebrate_host(lineage or "")
                     time.sleep(0.35)
                 else:
-                    host_lower = host.lower()
-                    host_cache[host] = any(kw in host_lower for kw in {
+                    host_lower = host_name.lower()
+                    host_cache[host_name] = any(kw in host_lower for kw in {
                         "human", "homo sapiens", "mouse", "mus musculus",
                         "chicken", "gallus", "pig", "sus scrofa", "cow",
                         "bos taurus", "dog", "cat", "horse", "sheep",
@@ -155,11 +179,29 @@ def main():
                         "fish", "salmon", "trout",
                     })
 
-            if host_cache[host]:
+            if host_cache[host_name]:
                 vertebrate.append(acc)
             else:
                 non_vertebrate.append(acc)
-        else:
+            classified = True
+
+        # Fallback: check isolation_source and note for vertebrate keywords
+        if not classified and (isolation_source or note):
+            combined = (isolation_source + " " + note).lower()
+            vertebrate_hints = {
+                "human", "patient", "blood", "serum", "plasma", "saliva",
+                "nasopharyngeal", "lung", "liver", "brain", "feces",
+                "stool", "urine", "swab", "biopsy", "tissue",
+                "mouse", "rat", "chicken", "pig", "cow", "horse",
+                "dog", "cat", "bat", "monkey", "primate", "fish",
+                "sheep", "goat", "deer", "bird", "duck",
+            }
+            if any(kw in combined for kw in vertebrate_hints):
+                vertebrate.append(acc)
+                classified = True
+
+        # Fallback: check virus taxonomy for known vertebrate-associated families
+        if not classified:
             result = classify_by_taxonomy(taxonomy)
             if result == "vertebrate":
                 vertebrate.append(acc)

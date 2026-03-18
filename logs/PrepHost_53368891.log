@@ -1,0 +1,101 @@
+==============================================================
+Node: g012
+Job ID: 53368891
+Start time: Sun Mar 15 04:55:35 PM EDT 2026
+==============================================================
+Running OmniVir host-class data preparation
+  vertebrate:     ~/evovir/data/fasta/virus_vertebrate (2984)
+  non_vertebrate: ~/evovir/data/fasta/virus_non_vertebrate (7399)
+  unknown_host:   ~/evovir/data/fasta/virus_unknown_host (3473)
+==============================================================
+
+Loading vertebrate virus genomes...
+    [virus_vertebrate] 500/2984 files loaded (499 genomes kept)
+    [virus_vertebrate] 1000/2984 files loaded (999 genomes kept)
+    [virus_vertebrate] 1500/2984 files loaded (1499 genomes kept)
+    [virus_vertebrate] 2000/2984 files loaded (1998 genomes kept)
+    [virus_vertebrate] 2500/2984 files loaded (2498 genomes kept)
+    [virus_vertebrate] 2984/2984 files loaded (2982 genomes kept)
+  Total: 2982 genomes from data/fasta/virus_vertebrate
+
+Loading non-vertebrate virus genomes...
+    [virus_non_vertebrate] 500/7399 files loaded (495 genomes kept)
+    [virus_non_vertebrate] 1000/7399 files loaded (992 genomes kept)
+    [virus_non_vertebrate] 1500/7399 files loaded (1489 genomes kept)
+    [virus_non_vertebrate] 2000/7399 files loaded (1986 genomes kept)
+    [virus_non_vertebrate] 2500/7399 files loaded (2485 genomes kept)
+    [virus_non_vertebrate] 3000/7399 files loaded (2981 genomes kept)
+    [virus_non_vertebrate] 3500/7399 files loaded (3481 genomes kept)
+    [virus_non_vertebrate] 4000/7399 files loaded (3981 genomes kept)
+    [virus_non_vertebrate] 4500/7399 files loaded (4481 genomes kept)
+    [virus_non_vertebrate] 5000/7399 files loaded (4980 genomes kept)
+    [virus_non_vertebrate] 5500/7399 files loaded (5479 genomes kept)
+    [virus_non_vertebrate] 6000/7399 files loaded (5972 genomes kept)
+    [virus_non_vertebrate] 6500/7399 files loaded (6472 genomes kept)
+    [virus_non_vertebrate] 7000/7399 files loaded (6972 genomes kept)
+    [virus_non_vertebrate] 7399/7399 files loaded (7371 genomes kept)
+  Total: 7371 genomes from data/fasta/virus_non_vertebrate
+
+Loading unknown-host virus genomes (grouping with non-vertebrate)...
+    [virus_unknown_host] 500/3473 files loaded (462 genomes kept)
+    [virus_unknown_host] 1000/3473 files loaded (960 genomes kept)
+    [virus_unknown_host] 1500/3473 files loaded (1459 genomes kept)
+    [virus_unknown_host] 2000/3473 files loaded (1959 genomes kept)
+    [virus_unknown_host] 2500/3473 files loaded (2459 genomes kept)
+    [virus_unknown_host] 3000/3473 files loaded (2959 genomes kept)
+    [virus_unknown_host] 3473/3473 files loaded (3432 genomes kept)
+  Total: 3432 genomes from data/fasta/virus_unknown_host
+  Combined non-vertebrate total: 10803 genomes
+
+Class summary:
+  Vertebrate (label=1):     2982 genomes
+  Non-vertebrate (label=0): 10803 genomes
+
+Splitting genomes 90/10...
+  Vertebrate     — train: 2416  dev: 268  test: 298
+  Non-vertebrate — train: 8751  dev: 972  test: 1080
+
+Generating train.csv...
+    Vertebrate fragments: 500/2416 genomes processed
+    Vertebrate fragments: 1000/2416 genomes processed
+    Vertebrate fragments: 1500/2416 genomes processed
+    Vertebrate fragments: 2000/2416 genomes processed
+    Vertebrate fragments: 2416/2416 genomes processed
+    Non-vertebrate fragments: 500/8751 genomes processed
+    Non-vertebrate fragments: 1000/8751 genomes processed
+    Non-vertebrate fragments: 1500/8751 genomes processed
+    Non-vertebrate fragments: 2000/8751 genomes processed
+    Non-vertebrate fragments: 2500/8751 genomes processed
+    Non-vertebrate fragments: 3000/8751 genomes processed
+    Non-vertebrate fragments: 3500/8751 genomes processed
+    Non-vertebrate fragments: 4000/8751 genomes processed
+    Non-vertebrate fragments: 4500/8751 genomes processed
+    Non-vertebrate fragments: 5000/8751 genomes processed
+    Non-vertebrate fragments: 5500/8751 genomes processed
+    Non-vertebrate fragments: 6000/8751 genomes processed
+    Non-vertebrate fragments: 6500/8751 genomes processed
+    Non-vertebrate fragments: 7000/8751 genomes processed
+    Non-vertebrate fragments: 7500/8751 genomes processed
+    Non-vertebrate fragments: 8000/8751 genomes processed
+    Non-vertebrate fragments: 8500/8751 genomes processed
+    Non-vertebrate fragments: 8751/8751 genomes processed
+  Wrote 5583500 rows -> data/processed_host/train.csv
+
+Generating dev.csv...
+    Vertebrate fragments: 268/268 genomes processed
+    Non-vertebrate fragments: 500/972 genomes processed
+    Non-vertebrate fragments: 972/972 genomes processed
+  Wrote 620000 rows -> data/processed_host/dev.csv
+
+Generating test.csv...
+    Vertebrate fragments: 298/298 genomes processed
+    Non-vertebrate fragments: 500/1080 genomes processed
+    Non-vertebrate fragments: 1000/1080 genomes processed
+    Non-vertebrate fragments: 1080/1080 genomes processed
+  Wrote 689000 rows -> data/processed_host/test.csv
+
+Done. Dataset ready for training.
+
+==============================================================
+OmniVir host-class data preparation completed at: Sun Mar 15 05:00:29 PM EDT 2026
+==============================================================
