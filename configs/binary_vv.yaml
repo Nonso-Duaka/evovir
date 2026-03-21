@@ -1,0 +1,36 @@
+task: binary
+num_classes: 2
+
+accessions_dir: data/accessions
+data_dir: data
+metadata_path: data/metadata_binary_vv.csv
+embeddings_dir: outputs/binary_vv/embeddings
+
+model_name: evo2_7b_base
+layer_name: blocks.28.mlp.l3
+embedding_dim: 4096
+
+max_seq_len: 4000
+window_stride: 2000
+min_seq_len: 500
+max_genome_len: 300000
+ambiguous_base_threshold: 0.05
+
+precision: bf16
+extraction_batch_size: 4
+num_workers: 4
+compile_model: false
+multi_gpu: true
+
+head_type: mlp
+hidden_dim: 512
+dropout: 0.3
+batch_size: 512
+learning_rate: 1.0e-4
+weight_decay: 1.0e-4
+epochs: 50
+patience: 10
+val_fraction: 0.15
+test_fraction: 0.15
+seed: 42
+output_dir: outputs/binary_vv

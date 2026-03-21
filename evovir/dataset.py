@@ -90,11 +90,16 @@ class ViralDataset(Dataset):
     def _get_sequence(self, row: pd.Series) -> Optional[str]:
         if "sequence" in row and pd.notna(row["sequence"]):
             return str(row["sequence"])
-        if self.fasta_dir is None:
+
+        fasta_value = Path(str(row["fasta_file"]))
+        candidate_paths = [fasta_value]
+        if self.fasta_dir is not None and not fasta_value.is_absolute():
+            candidate_paths.append(self.fasta_dir / fasta_value)
+
+        fasta_path = next((p for p in candidate_paths if p.exists()), None)
+        if fasta_path is None:
             return None
-        fasta_path = self.fasta_dir / str(row["fasta_file"])
-        if not fasta_path.exists():
-            return None
+
         records = list(SeqIO.parse(fasta_path, "fasta"))
         if not records:
             return None
